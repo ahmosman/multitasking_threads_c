@@ -104,7 +104,7 @@ int getRandomRole()
 
     double r = (double)rand() / RAND_MAX; // Generuj liczbę z zakresu [0, 1)
 
-    if (r < 0.75)
+    if (r < 0.5)
     {
         return 0;
     }
@@ -164,10 +164,10 @@ int main()
         }
     }
 
-    semid = semget(ID, 4, IPC_CREAT | IPC_EXCL | 0600);
+    semid = semget(ID, 5, IPC_CREAT | IPC_EXCL | 0600);
     if (semid == -1)
     {
-        semid = semget(ID, 4, 0600);
+        semid = semget(ID, 5, 0600);
         if (semid == -1)
         {
             perror("ERR Utworzenie tablicy semaforow");
@@ -196,6 +196,11 @@ int main()
             perror("ERR Nadanie wartosci semaforowi 3");
             exit(1);
         }
+        if (semctl(semid, 4, SETVAL, (int)1) == -1)
+        {
+            perror("ERR Nadanie wartosci semaforowi 4");
+            exit(1);
+        }
     }
 
     // Usunięcie kolejki komunikatów i semafora
@@ -207,6 +212,7 @@ int main()
     mem_buf[1] = 0; // liczba ksiazek na polce
     mem_buf[2] = 0; // liczba pisarzy w czytelni
     mem_buf[3] = 0; // liczba czytelnikow poza czytelnia
+    mem_buf[4] = 0; // numer ksiazki do odczytania przez pisarza
 
     int events_msg_size = sizeof(events) - sizeof(long);
     int books_msg_size = sizeof(books) - sizeof(long);
@@ -281,14 +287,15 @@ int main()
                 }
 
                 // faza korzystania z czytelni
-                if (role == 0 && writers_num == 0)
+                if (role == 0)
                 {
                     // czytelnik
-
+                    semdown(semid, 2); // semafor blokujacy przed wejsciem gdy jest pisarz
                     semdown(semid, 0); // liczba czytlenikow w czytelni
                     mem_buf[0]++;
                     printf("Liczba czytelnikow w czytelni: %d Po wejsciu przez PID %d\n", mem_buf[0], getpid());
                     semup(semid, 0);
+                    semup(semid, 2);
 
                     // odczytujemy ksiazke
                     if (msgrcv(books_msgid, &books, books_msg_size, events.book_pid, 0) == -1)
@@ -311,6 +318,13 @@ int main()
                         semdown(semid, 1);
                         mem_buf[1]--;
                         semup(semid, 1);
+
+                        semdown(semid, 4);
+                        if (mem_buf[4] == events.book_pid) // ksiazka nie jest dostepna juz do odczytania przez pisarza
+                        {
+                            mem_buf[4] = 0;
+                        }
+                        semup(semid, 4);
                     }
 
                     semdown(semid, 0);
@@ -319,16 +333,47 @@ int main()
                     printf("Liczba czytelnikow: %d Po opuszczeniu przez PID %d\n", mem_buf[0], getpid());
                     semup(semid, 0);
                 }
-                else if (role == 1 && readers_num == 0)
+                else if (role == 1)
                 {
                     // pisarz
 
                     semdown(semid, 2);
                     mem_buf[2] = 1;
                     printf("Liczba pisarzy w czytelni: %d Po wejsciu przez pisarza PID %d\n", mem_buf[2], getpid());
-                    semup(semid, 2);
 
-                    printf("Pisarz o PID %d moze przeczytac ksiazke od %d\n", getpid(), events.book_pid);
+                    int book_to_read;
+                    semdown(semid, 4);
+                    book_to_read = mem_buf[4];
+
+                    if (book_to_read > 0)
+                    {
+                        // pisarz odczytuje ksiazke
+                        printf("Pisarz o ID %d chce odczytac ksiazke %d\n", getpid(), book_to_read);
+                        if (msgrcv(books_msgid, &books, books_msg_size, book_to_read, 0) == -1)
+                        {
+                            perror("ERR Odebranie komunikatu z ksiazka");
+                        }
+                        printf("Pisarz o PID %d odczytal ksiazke: %s\n", getpid(), books.btext);
+                        printf("Po odczytaniu ksiazki przez pisarza PID %d zostalo %d czytelnikow do przeczytania\n", getpid(), books.brest_to_read);
+                        if (books.brest_to_read > 0)
+                        {
+                            if (msgsnd(books_msgid, &books, books_msg_size, 0) == -1)
+                            {
+                                perror("ERR Przekazanie dalej komunikatu z ksiazka przez pisarza");
+                            }
+                        }
+                        else
+                        {
+                            // ksiazka przeczytana przez wszystkich, usun z kolejki (polki)
+                            semdown(semid, 1);
+                            mem_buf[1]--;
+                            semup(semid, 1);
+
+                            mem_buf[4] = 0;
+                        }
+                    }
+
+                    semup(semid, 4);
 
                     performSrand();
 
@@ -348,7 +393,7 @@ int main()
                         events.erest_to_read = mem_buf[3];
                         semup(semid, 3);
 
-                        sprintf(books.btext, "Ksiazka nr %d zapisana przez pisarza o PID %d", book_number, getpid());
+                        sprintf(books.btext, "Ksiazka nr %d zapisana przez pisarza o PID %d", books.btype, getpid());
                         if (msgsnd(books_msgid, &books, books_msg_size, 0) == -1)
                         {
                             perror("ERR Wyslanie nowej ksiazki");
@@ -361,10 +406,14 @@ int main()
 
                         semup(semid, 1);
 
+                        semdown(semid, 4);
+                        mem_buf[4] = books.btype;
+                        semup(semid, 4);
+
                         if (events.erest_to_read > 0)
                         {
                             events.etype = ETYPE;
-                            events.book_pid = book_number;
+                            events.book_pid = books.btype;
                             if (msgsnd(events_msgid, &events, events_msg_size, 0) == -1)
                             {
                                 perror("ERR Wyslanie komunikatu o nowym wydarzeniu dodania ksiazki");
@@ -377,7 +426,6 @@ int main()
                         printf("Pisarz o PID %d nie ma miejsca na polce\n", getpid());
                     }
 
-                    semdown(semid, 2);
                     mem_buf[2] = 0;
                     printf("Liczba pisarzy: %d Po wyjsciu przez pisarza PID %d\n", mem_buf[2], getpid());
                     semup(semid, 2);
