@@ -20,7 +20,6 @@ static pthread_cond_t runway_available_cond = PTHREAD_COND_INITIALIZER,
                       space_available = PTHREAD_COND_INITIALIZER;
 
 static int airport_num = 0, takeoff_waiting_num = 0, landing_waiting_num = 0;
-static bool is_runway_available = true;
 
 int K = 3;
 int N = 5;
@@ -48,25 +47,22 @@ void *landing(void *p)
 
     if (curr_airport_num >= N || landing_waiting_num > 1)
     {
-        printf("Samolot o ID %d czeka na miejsce na lotnisku\n", plane_id);
+        printf("Samolot o ID %d czeka w kolejce do ladownania\n", plane_id);
         pthread_cond_wait(&space_available, &space_mtx);
     }
     pthread_mutex_unlock(&space_mtx);
 
+    printf("Samolot o ID %d czeka na pas do ladowania\n", plane_id);
+
     pthread_mutex_lock(&runway_mtx);
-    if (!is_runway_available)
-    {
-        printf("Samolot o ID %d czeka na pas do ladowania\n", plane_id);
-        pthread_cond_wait(&runway_available_cond, &runway_mtx);
-    }
-    is_runway_available = false;
     printf("Ladowanie samolotu o ID %d\n", plane_id);
-    sleepRandomMilliseconds(500, 2000);
-    airport_num++;
-    is_runway_available = true;
     landing_waiting_num--;
 
-    printf("Liczba samolotow na lotnisku po ladowaniu: %d\n", airport_num);
+    sleepRandomMilliseconds(1000, 3000);
+
+    airport_num++;
+
+    printf("Liczba samolotow na lotnisku po ladowaniu samolotu o ID %d: %d\n", plane_id, airport_num);
     pthread_mutex_unlock(&runway_mtx);
     pthread_cond_signal(&runway_available_cond);
 }
@@ -74,25 +70,20 @@ void *landing(void *p)
 void *takeoff(void *p)
 {
     int plane_id = *((int *)p);
+    printf("Samolot o ID %d czeka na pas do startu\n", plane_id);
+
     pthread_mutex_lock(&runway_mtx);
 
-    if (!is_runway_available)
-    {
-        printf("Samolot o ID %d czeka na pas do startu\n", plane_id);
-        pthread_cond_wait(&runway_available_cond, &runway_mtx);
-    }
-    is_runway_available = false;
     printf("Start samolotu o ID %d\n", plane_id);
     sleepRandomMilliseconds(500, 2000);
     airport_num--;
     takeoff_waiting_num--;
-    is_runway_available = true;
     if (airport_num < N)
     {
         pthread_cond_signal(&space_available);
     }
     pthread_cond_signal(&runway_available_cond);
-    printf("Liczba samolotow na lotnisku po starcie: %d\n", airport_num);
+    printf("Liczba samolotow na lotnisku po starcie samolotu o ID %d: %d\n", plane_id, airport_num);
     pthread_mutex_unlock(&runway_mtx);
 }
 
@@ -111,7 +102,9 @@ int main()
     while (1)
     {
         srand(time(NULL));
+
         sleep(1);
+
         int action = rand() % 2;
         if (action == 0)
         {
@@ -119,7 +112,6 @@ int main()
             pthread_t landing_thread;
 
             int plane_id = rand() % 1000 + 1000;
-            // random number from 1000 to 2000
 
             pthread_attr_setschedparam(&tattr, &param);
             // if (pthread_attr_setschedparam(&tattr, &param) != 0)
@@ -138,7 +130,6 @@ int main()
             printf("airport_num: %d\n", airport_num);
             // takeoff
             pthread_t takeoff_thread;
-            // random number from 2000 to 3000
             int plane_id = rand() % 1000 + 2000;
 
             if (airport_num < K)
