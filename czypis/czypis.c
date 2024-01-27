@@ -267,7 +267,7 @@ int main()
                         perror("ERR Odebranie komunikatu o wydarzeniu");
                         exit(1);
                     }
-                    printf("Czytelnik o PID %d dostal event dodania ksiazki: %d. Wyslany zostal do %d odbiorcow\n", getpid(), events.book_pid, events.erest_to_read);
+                    printf("Czytelnik o PID %d dostal event dodania ksiazki: %lu. Wyslany zostal do %d odbiorcow\n", getpid(), events.book_pid, events.erest_to_read);
 
                     semdown(semid, 3);
                     mem_buf[3]--;
@@ -393,7 +393,7 @@ int main()
                         events.erest_to_read = mem_buf[3];
                         semup(semid, 3);
 
-                        sprintf(books.btext, "Ksiazka nr %d zapisana przez pisarza o PID %d", books.btype, getpid());
+                        sprintf(books.btext, "Ksiazka nr %lu zapisana przez pisarza o PID %d", books.btype, getpid());
                         if (msgsnd(books_msgid, &books, books_msg_size, 0) == -1)
                         {
                             perror("ERR Wyslanie nowej ksiazki");
