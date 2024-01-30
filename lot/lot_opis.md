@@ -22,7 +22,7 @@ Celem zadania jest zaimplementowanie programu, który synchronizuje samoloty w d
 ### Wątki
 1. **Wątek Lądowania:**
    - Samoloty oczekujące na lądowanie inkrementują licznik oczekujących na lądowanie.
-   - Jeśli lotnisko jest pełny lub więcej niż jeden samolot czeka na lądowanie, samolot czeka na sygnał o dostępie do miejsca na lotnisku.
+   - Jeśli lotnisko jest pełne lub więcej niż jeden samolot czeka na lądowanie, samolot czeka na sygnał o dostępie do miejsca na lotnisku.
    - Po uzyskaniu dostępu, samolot ląduje, inkrementuje liczbę samolotów na lotnisku i sygnalizuje dostęp do pasa startowego.
 
 2. **Wątek Startu:**

@@ -16,8 +16,7 @@
 
 static pthread_mutex_t runway_mtx = PTHREAD_MUTEX_INITIALIZER,
                        space_mtx = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t runway_available_cond = PTHREAD_COND_INITIALIZER,
-                      space_available = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t space_available = PTHREAD_COND_INITIALIZER;
 
 static int airport_num = 0, takeoff_waiting_num = 0, landing_waiting_num = 0;
 
@@ -64,7 +63,6 @@ void *landing(void *p)
 
     printf("Liczba samolotow na lotnisku po ladowaniu samolotu o ID %d: %d\n", plane_id, airport_num);
     pthread_mutex_unlock(&runway_mtx);
-    pthread_cond_signal(&runway_available_cond);
 }
 
 void *takeoff(void *p)
@@ -82,7 +80,6 @@ void *takeoff(void *p)
     {
         pthread_cond_signal(&space_available);
     }
-    pthread_cond_signal(&runway_available_cond);
     printf("Liczba samolotow na lotnisku po starcie samolotu o ID %d: %d\n", plane_id, airport_num);
     pthread_mutex_unlock(&runway_mtx);
 }
@@ -114,10 +111,6 @@ int main()
             int plane_id = rand() % 1000 + 1000;
 
             pthread_attr_setschedparam(&tattr, &param);
-            // if (pthread_attr_setschedparam(&tattr, &param) != 0)
-            // {
-            //     perror("pthread_attr_setschedparam error for landing");
-            // }
 
             if (pthread_create(&landing_thread, &tattr, landing, &plane_id) != 0)
             {
@@ -142,10 +135,6 @@ int main()
             }
 
             pthread_attr_setschedparam(&tattr, &param);
-            // if (pthread_attr_setschedparam(&tattr, &param) != 0)
-            // {
-            //     perror("pthread_attr_setschedparam error for takeoff");
-            // }
             takeoff_waiting_num++;
             if (pthread_create(&takeoff_thread, &tattr, takeoff, &plane_id) != 0)
             {
