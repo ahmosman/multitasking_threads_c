@@ -1,10 +1,10 @@
-// Na lotniskowcu lądują i startują samoloty. W tym celu potrzebują wyłącznego dostępu do pasa startowego.
-// Lotniskowiec może pomieścić pewną ustaloną liczbę N samolotów. Jeśli liczba samolotów na lotniskowcu jest mniejsza
-// niż K (K < N), wówczas priorytet w dostępie do pasa mają samoloty lądujące.
+// On an aircraft carrier, planes land and take off. To do so, they need exclusive access to the runway.
+// The carrier can accommodate a fixed number N of planes. If the number of planes on the carrier is less
+// than K (K < N), then landing planes have priority for the runway.
 
-// Cel zadania: synchronizacja samolotów (pas i miejsce na lotniskowcu to zasoby)
+// Task objective: synchronization of planes (runway and space on the carrier are resources)
 
-// Źródło zadania: Weiss Z., Gruźlewski T., Programowanie współbieżne i rozproszone w przykładach i zadaniach. WNT W-wa 1993
+// Source: Weiss Z., Gruźlewski T., Concurrent and Distributed Programming in Examples and Exercises. WNT Warsaw 1993
 
 #include <pthread.h>
 #include <stdio.h>
@@ -47,22 +47,22 @@ void *landing(void *p)
 
     if (curr_airport_num >= N || landing_waiting_num > 1)
     {
-        printf("Samolot o ID %d czeka w kolejce do ladownania\n", plane_id);
+        printf("Plane with ID %d is waiting in the landing queue\n", plane_id);
         pthread_cond_wait(&space_available, &space_mtx);
     }
     pthread_mutex_unlock(&space_mtx);
 
-    printf("Samolot o ID %d czeka na pas do ladowania\n", plane_id);
+    printf("Plane with ID %d is waiting for the runway to land\n", plane_id);
 
     pthread_mutex_lock(&runway_mtx);
-    printf("Ladowanie samolotu o ID %d\n", plane_id);
+    printf("Landing plane with ID %d\n", plane_id);
     landing_waiting_num--;
 
     sleepRandomMilliseconds(1000, 3000);
 
     airport_num++;
 
-    printf("Liczba samolotow na lotnisku po ladowaniu samolotu o ID %d: %d\n", plane_id, airport_num);
+    printf("Number of planes at the airport after landing plane with ID %d: %d\n", plane_id, airport_num);
     pthread_mutex_unlock(&runway_mtx);
     pthread_cond_signal(&runway_available_cond);
 }
@@ -70,11 +70,11 @@ void *landing(void *p)
 void *takeoff(void *p)
 {
     int plane_id = *((int *)p);
-    printf("Samolot o ID %d czeka na pas do startu\n", plane_id);
+    printf("Plane with ID %d is waiting for the runway to take off\n", plane_id);
 
     pthread_mutex_lock(&runway_mtx);
 
-    printf("Start samolotu o ID %d\n", plane_id);
+    printf("Plane with ID %d is taking off\n", plane_id);
     sleepRandomMilliseconds(500, 2000);
     airport_num--;
     takeoff_waiting_num--;
@@ -83,7 +83,7 @@ void *takeoff(void *p)
         pthread_cond_signal(&space_available);
     }
     pthread_cond_signal(&runway_available_cond);
-    printf("Liczba samolotow na lotnisku po starcie samolotu o ID %d: %d\n", plane_id, airport_num);
+    printf("Number of planes at the airport after takeoff of plane with ID %d: %d\n", plane_id, airport_num);
     pthread_mutex_unlock(&runway_mtx);
 }
 
@@ -114,10 +114,6 @@ int main()
             int plane_id = rand() % 1000 + 1000;
 
             pthread_attr_setschedparam(&tattr, &param);
-            // if (pthread_attr_setschedparam(&tattr, &param) != 0)
-            // {
-            //     perror("pthread_attr_setschedparam error for landing");
-            // }
 
             if (pthread_create(&landing_thread, &tattr, landing, &plane_id) != 0)
             {
@@ -125,7 +121,7 @@ int main()
             }
             pthread_detach(landing_thread);
         }
-        else if (action == 1 && airport_num - takeoff_waiting_num > 0) // nie mozemy wystatowac samolotow ktorych nie mamy
+        else if (action == 1 && airport_num - takeoff_waiting_num > 0) // we can't take off planes we don't have
         {
             printf("airport_num: %d\n", airport_num);
             // takeoff
@@ -142,10 +138,7 @@ int main()
             }
 
             pthread_attr_setschedparam(&tattr, &param);
-            // if (pthread_attr_setschedparam(&tattr, &param) != 0)
-            // {
-            //     perror("pthread_attr_setschedparam error for takeoff");
-            // }
+
             takeoff_waiting_num++;
             if (pthread_create(&takeoff_thread, &tattr, takeoff, &plane_id) != 0)
             {

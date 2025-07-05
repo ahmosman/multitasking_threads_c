@@ -1,33 +1,25 @@
-// 1. jest ustalona liczba procesów — N
-// 2 każdy proces działa naprzemiennie w dwóch fazach: fazie relaksu i fazie korzystania z czytelni;
-// 3 w dowolnym momencie fazy relaksu proces może (choć nie musi) zmienić swoją rolę: z pisarza na czytelnika lub z czytelnika na pisarza;
-// 4 przechodząc do fazy korzystania z czytelni proces musi uzyskać dostęp we właściwym dla swojej aktualnej roli trybie;
-// 5 pisarz umieszcza efekt swojej pracy — swoje dzieło — w formie komunikatu w kolejce komunikatów, gdzie komunikat ten pozostaje do momentu,
-// aż odczytają go wszystkie procesy, które w momencie wydania dzieła były w roli czytelnika [nie muszą być akurat w tym momencie w czytelni]
-// (po odczytaniu przez wszystkie wymagane procesy komunikat jest usuwany);
-// 6 pojemność kolejki komunikatów — reprezentującej półkę z książkami — jest ograniczona, tzn. nie może ona przechowywać więcej niż K dzieł
-// 7 podczas pobytu w czytelni proces (również pisarz) czyta co najwyżej jedno dzieło, po czym czytelnik opuszcza czytelnię, a pisarz czeka na miejsce w kolejce,
-// żeby opublikować kolejne dzieło.
+// 1. There is a fixed number of processes — N
+// 2. Each process alternates between two phases: relaxation and using the library;
+// 3. At any time during the relaxation phase, a process may (but does not have to) change its role: from writer to reader or from reader to writer;
+// 4. When entering the library phase, the process must obtain access in the appropriate mode for its current role;
+// 5. A writer places the result of their work — their "book" — as a message in the message queue, where it remains until all processes that were readers at the time of publication have read it [they do not have to be in the library at that moment]
+// (after all required processes have read it, the message is removed);
+// 6. The capacity of the message queue — representing the bookshelf — is limited, i.e., it cannot store more than K works
+// 7. While in the library, a process (including a writer) reads at most one work, after which the reader leaves the library, and the writer waits for space in the queue to publish another work.
 
-// kolejka komunikatow - półka z książkami
-// semafory - zapis do półki
-// pamięć
+// message queue - bookshelf with books
+// semaphores - writing to the shelf
+// memory
 
-// Pytania
-// Czy proces żyje nieskończenie długo? - Tak
-// Czy przy przejściu w fazę relaksu może być sleep? - Tak, jeden losowy, potem zmiana roli i jakiś kolejny sleep
-// Jak ograniczyc pojemnosc kolejki komunikatow? - nie da się bezpośrednio, trzeba pamięcia współdzieloną
+// Questions
+// Does the process live indefinitely? - Yes
+// Can there be a sleep when entering the relaxation phase? - Yes, a random one, then a role change and another sleep
+// How to limit the capacity of the message queue? - not directly possible, must use shared memory
 
-// Do biblioteki wchodzi kilku czytelnikow
-// Wtedy pisarz nie może wejsc
-// Jak czytelnicy wychodzą to wchodzi jeden pisaz
-// Wtedy jezeli coś jest do przeczytania ( od poprzedniego pisarza ) to czyta to i publikuje swoje dzieło po czym wychodzi do stanu relaksu
-
-// Komendy
-// ipcs - wyswietla wszystkie semafory, kolejki komunikatow i pamieci wspoldzielone
-// ipcrm -a   - usuwa wszystkie semafory, kolejki komunikatow i pamieci wspoldzielone
-// gcc czypis.c -o p.out
-// pkill -9 p.out - zabija wszystkie procesy o nazwie p.out
+// Several readers enter the library
+// Then the writer cannot enter
+// When the readers leave, one writer enters
+// If there is something to read (from the previous writer), they read it and then publish their own work before returning to relaxation
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,7 +43,7 @@ void semup(int semid, int semnum)
     buf.sem_flg = 0;
     if (semop(semid, &buf, 1) == -1)
     {
-        perror("ERR Podnoszenie semafora");
+        perror("ERR Raising semaphore");
         exit(1);
     }
 }
@@ -63,7 +55,7 @@ void semdown(int semid, int semnum)
     buf.sem_flg = 0;
     if (semop(semid, &buf, 1) == -1)
     {
-        perror("ERR Opuszczenie semafora");
+        perror("ERR Lowering semaphore");
         exit(1);
     }
 }
@@ -102,7 +94,7 @@ int getRandomRole()
 {
     performSrand();
 
-    double r = (double)rand() / RAND_MAX; // Generuj liczbę z zakresu [0, 1)
+    double r = (double)rand() / RAND_MAX; // Generate a number in the range [0, 1)
 
     if (r < 0.5)
     {
@@ -125,20 +117,20 @@ int main()
     int N = 15;
     int K = 10;
 
-    // role - 0 czytelnik, 1 pisarz
+    // role - 0 reader, 1 writer
     int role = 0;
 
     shmid = shmget(1234, 4 * sizeof(int), IPC_CREAT | 0600);
     if (shmid == -1)
     {
-        perror("ERR Blad tworzenia pamieci wspoldzielonej");
+        perror("ERR Error creating shared memory");
         exit(1);
     }
 
     mem_buf = (int *)shmat(shmid, NULL, 0);
     if (mem_buf == NULL)
     {
-        perror("ERR Przylaczenie segmentu pamieci wspoldzielonej");
+        perror("ERR Attaching shared memory segment");
         exit(1);
     }
 
@@ -148,7 +140,7 @@ int main()
         books_msgid = msgget(ID, IPC_CREAT | 0600);
         if (books_msgid == -1)
         {
-            perror("ERR Utworzenie kolejki ksiazek");
+            perror("ERR Creating books queue");
             exit(1);
         }
     }
@@ -159,7 +151,7 @@ int main()
         events_msgid = msgget(ID, IPC_CREAT | 0600);
         if (events_msgid == -1)
         {
-            perror("ERR Utworzenie kolejki zdarzen");
+            perror("ERR Creating events queue");
             exit(1);
         }
     }
@@ -170,62 +162,62 @@ int main()
         semid = semget(ID, 5, 0600);
         if (semid == -1)
         {
-            perror("ERR Utworzenie tablicy semaforow");
+            perror("ERR Creating semaphore array");
             exit(1);
         }
     }
     else
     {
-        if (semctl(semid, 0, SETVAL, (int)1) == -1) // liczba czytelników
+        if (semctl(semid, 0, SETVAL, (int)1) == -1) // number of readers
         {
-            perror("ERR Nadanie wartosci semaforowi 0");
+            perror("ERR Setting value for semaphore 0");
             exit(1);
         }
-        if (semctl(semid, 1, SETVAL, (int)1) == -1) // liczba ksiazek na polce
+        if (semctl(semid, 1, SETVAL, (int)1) == -1) // number of books on the shelf
         {
-            perror("ERR Nadanie wartosci semaforowi 1");
+            perror("ERR Setting value for semaphore 1");
             exit(1);
         }
         if (semctl(semid, 2, SETVAL, (int)1) == -1)
         {
-            perror("ERR Nadanie wartosci semaforowi 2");
+            perror("ERR Setting value for semaphore 2");
             exit(1);
         }
         if (semctl(semid, 3, SETVAL, (int)1) == -1)
         {
-            perror("ERR Nadanie wartosci semaforowi 3");
+            perror("ERR Setting value for semaphore 3");
             exit(1);
         }
         if (semctl(semid, 4, SETVAL, (int)1) == -1)
         {
-            perror("ERR Nadanie wartosci semaforowi 4");
+            perror("ERR Setting value for semaphore 4");
             exit(1);
         }
     }
 
-    // Usunięcie kolejki komunikatów i semafora
+    // Removing message queues and semaphore
     // msgctl(books_msgid, IPC_RMID, NULL);
     // msgctl(events_msgid, IPC_RMID, NULL);
     // semctl(semid, 0, IPC_RMID);
 
-    mem_buf[0] = 0; // liczba czytlenikow w czytelni
-    mem_buf[1] = 0; // liczba ksiazek na polce
-    mem_buf[2] = 0; // liczba pisarzy w czytelni
-    mem_buf[3] = 0; // liczba czytelnikow poza czytelnia
-    mem_buf[4] = 0; // numer ksiazki do odczytania przez pisarza
+    mem_buf[0] = 0; // number of readers in the library
+    mem_buf[1] = 0; // number of books on the shelf
+    mem_buf[2] = 0; // number of writers in the library
+    mem_buf[3] = 0; // number of readers outside the library
+    mem_buf[4] = 0; // book number to be read by the writer
 
     int events_msg_size = sizeof(events) - sizeof(long);
     int books_msg_size = sizeof(books) - sizeof(long);
-    // uruchom N procesow
+    // start N processes
     for (i = 0; i < N; i++)
     {
         f = fork();
         if (f == 0)
         {
-            printf("Stworzono proces %d\n", getpid());
+            printf("Created process %d\n", getpid());
             while (1)
             {
-                // faza relaksu - ustaw losowo role
+                // relaxation phase - randomly set role
 
                 sleep(1);
                 performSrand();
@@ -236,11 +228,11 @@ int main()
 
                 if (role == 0)
                 {
-                    printf("Proces o PID %d jest czytelnikiem\n", getpid());
+                    printf("Process with PID %d is a reader\n", getpid());
                 }
                 else
                 {
-                    printf("Proces o PID %d jest pisarzem\n", getpid());
+                    printf("Process with PID %d is a writer\n", getpid());
                 }
 
                 int readers_num;
@@ -254,24 +246,24 @@ int main()
                 writers_num = mem_buf[2];
                 semup(semid, 2);
 
-                // oczekujemy na event
+                // wait for event
                 if (role == 0)
                 {
                     semdown(semid, 3);
-                    mem_buf[3]++; // liczba czytelnikow oczekujących na pozwolenie wejscia do czytelni
+                    mem_buf[3]++; // number of readers waiting for permission to enter the library
                     semup(semid, 3);
 
-                    printf("Czytelnik o PID %d czeka na event\n", getpid());
+                    printf("Reader with PID %d is waiting for event\n", getpid());
                     if (msgrcv(events_msgid, &events, events_msg_size, ETYPE, 0) == -1)
                     {
-                        perror("ERR Odebranie komunikatu o wydarzeniu");
+                        perror("ERR Receiving event message");
                         exit(1);
                     }
-                    printf("Czytelnik o PID %d dostal event dodania ksiazki: %lu. Wyslany zostal do %d odbiorcow\n", getpid(), events.book_pid, events.erest_to_read);
+                    printf("Reader with PID %d received event of adding book: %lu. Sent to %d recipients\n", getpid(), events.book_pid, events.erest_to_read);
 
                     semdown(semid, 3);
                     mem_buf[3]--;
-                    printf("Oczekuje na pozwolenie: %d czytelnikow\n", mem_buf[3]);
+                    printf("Waiting for permission: %d readers\n", mem_buf[3]);
                     semup(semid, 3);
 
                     events.erest_to_read--;
@@ -280,47 +272,47 @@ int main()
                     {
                         if (msgsnd(events_msgid, &events, events_msg_size, 0) == -1)
                         {
-                            perror("ERR ERR Przekazanie dalej komunikatu o wydarzeniu");
+                            perror("ERR Passing event message further");
                         }
-                        printf("Event wejscia przekazany do %d czytelnikow\n", events.erest_to_read);
+                        printf("Entry event passed to %d readers\n", events.erest_to_read);
                     }
                 }
 
-                // faza korzystania z czytelni
+                // library usage phase
                 if (role == 0)
                 {
-                    // czytelnik
-                    semdown(semid, 2); // semafor blokujacy przed wejsciem gdy jest pisarz
-                    semdown(semid, 0); // liczba czytlenikow w czytelni
+                    // reader
+                    semdown(semid, 2); // semaphore blocking entry when there is a writer
+                    semdown(semid, 0); // number of readers in the library
                     mem_buf[0]++;
-                    printf("Liczba czytelnikow w czytelni: %d Po wejsciu przez PID %d\n", mem_buf[0], getpid());
+                    printf("Number of readers in the library: %d After entry by PID %d\n", mem_buf[0], getpid());
                     semup(semid, 0);
                     semup(semid, 2);
 
-                    // odczytujemy ksiazke
+                    // read the book
                     if (msgrcv(books_msgid, &books, books_msg_size, events.book_pid, 0) == -1)
                     {
-                        perror("ERR Odebranie komunikatu z ksiazka");
+                        perror("ERR Receiving book message");
                     }
-                    printf("Czytelnik o PID %d odczytal ksiazke: %s\n", getpid(), books.btext);
+                    printf("Reader with PID %d read book: %s\n", getpid(), books.btext);
 
                     books.brest_to_read--;
                     if (books.brest_to_read > 0)
                     {
                         if (msgsnd(books_msgid, &books, books_msg_size, 0) == -1)
                         {
-                            perror("ERR Przekazanie dalej komunikatu z ksiazka");
+                            perror("ERR Passing book message further");
                         }
                     }
                     else
                     {
-                        // ksiazka przeczytana przez wszystkich, usun z kolejki (polki)
+                        // book read by everyone, remove from queue (shelf)
                         semdown(semid, 1);
                         mem_buf[1]--;
                         semup(semid, 1);
 
                         semdown(semid, 4);
-                        if (mem_buf[4] == events.book_pid) // ksiazka nie jest dostepna juz do odczytania przez pisarza
+                        if (mem_buf[4] == events.book_pid) // book is no longer available to be read by the writer
                         {
                             mem_buf[4] = 0;
                         }
@@ -329,17 +321,17 @@ int main()
 
                     semdown(semid, 0);
                     mem_buf[0]--;
-                    printf("Czytelnik o PID %d opuszcza czytelnie\n", getpid());
-                    printf("Liczba czytelnikow: %d Po opuszczeniu przez PID %d\n", mem_buf[0], getpid());
+                    printf("Reader with PID %d is leaving the library\n", getpid());
+                    printf("Number of readers: %d After leaving by PID %d\n", mem_buf[0], getpid());
                     semup(semid, 0);
                 }
                 else if (role == 1)
                 {
-                    // pisarz
+                    // writer
 
                     semdown(semid, 2);
                     mem_buf[2] = 1;
-                    printf("Liczba pisarzy w czytelni: %d Po wejsciu przez pisarza PID %d\n", mem_buf[2], getpid());
+                    printf("Number of writers in the library: %d After entry by writer PID %d\n", mem_buf[2], getpid());
 
                     int book_to_read;
                     semdown(semid, 4);
@@ -347,24 +339,24 @@ int main()
 
                     if (book_to_read > 0)
                     {
-                        // pisarz odczytuje ksiazke
-                        printf("Pisarz o ID %d chce odczytac ksiazke %d\n", getpid(), book_to_read);
+                        // writer reads the book
+                        printf("Writer with ID %d wants to read book %d\n", getpid(), book_to_read);
                         if (msgrcv(books_msgid, &books, books_msg_size, book_to_read, 0) == -1)
                         {
-                            perror("ERR Odebranie komunikatu z ksiazka");
+                            perror("ERR Receiving book message");
                         }
-                        printf("Pisarz o PID %d odczytal ksiazke: %s\n", getpid(), books.btext);
-                        printf("Po odczytaniu ksiazki przez pisarza PID %d zostalo %d czytelnikow do przeczytania\n", getpid(), books.brest_to_read);
+                        printf("Writer with PID %d read book: %s\n", getpid(), books.btext);
+                        printf("After reading the book by writer PID %d, %d readers remain to read\n", getpid(), books.brest_to_read);
                         if (books.brest_to_read > 0)
                         {
                             if (msgsnd(books_msgid, &books, books_msg_size, 0) == -1)
                             {
-                                perror("ERR Przekazanie dalej komunikatu z ksiazka przez pisarza");
+                                perror("ERR Passing book message further by writer");
                             }
                         }
                         else
                         {
-                            // ksiazka przeczytana przez wszystkich, usun z kolejki (polki)
+                            // book read by everyone, remove from queue (shelf)
                             semdown(semid, 1);
                             mem_buf[1]--;
                             semup(semid, 1);
@@ -393,16 +385,16 @@ int main()
                         events.erest_to_read = mem_buf[3];
                         semup(semid, 3);
 
-                        sprintf(books.btext, "Ksiazka nr %lu zapisana przez pisarza o PID %d", books.btype, getpid());
+                        sprintf(books.btext, "Book no. %lu written by writer with PID %d", books.btype, getpid());
                         if (msgsnd(books_msgid, &books, books_msg_size, 0) == -1)
                         {
-                            perror("ERR Wyslanie nowej ksiazki");
+                            perror("ERR Sending new book");
                         }
 
                         semdown(semid, 1);
                         mem_buf[1]++;
 
-                        printf("Liczba ksiazek na polce: %d Po dodaniu przez pisarza PID %d\n", mem_buf[1], getpid());
+                        printf("Number of books on the shelf: %d After addition by writer PID %d\n", mem_buf[1], getpid());
 
                         semup(semid, 1);
 
@@ -416,18 +408,18 @@ int main()
                             events.book_pid = books.btype;
                             if (msgsnd(events_msgid, &events, events_msg_size, 0) == -1)
                             {
-                                perror("ERR Wyslanie komunikatu o nowym wydarzeniu dodania ksiazki");
+                                perror("ERR Sending event message about new book addition");
                             }
-                            printf("Pisarz o PID %d wyslal event dodania ksiazki %d do %d odbiorców\n", getpid(), book_number, events.erest_to_read);
+                            printf("Writer with PID %d sent event of adding book %d to %d recipients\n", getpid(), book_number, events.erest_to_read);
                         }
                     }
                     else
                     {
-                        printf("Pisarz o PID %d nie ma miejsca na polce\n", getpid());
+                        printf("Writer with PID %d has no space on the shelf\n", getpid());
                     }
 
                     mem_buf[2] = 0;
-                    printf("Liczba pisarzy: %d Po wyjsciu przez pisarza PID %d\n", mem_buf[2], getpid());
+                    printf("Number of writers: %d After leaving by writer PID %d\n", mem_buf[2], getpid());
                     semup(semid, 2);
                 }
             }
